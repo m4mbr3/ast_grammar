@@ -29,9 +29,7 @@ fn read_json(filename : &String) -> String {
 fn handle_members (members: &JsonValue) -> Vec<RuleBody> {
     let mut res : Vec<RuleBody> = vec!();
 
-    println!("members: {}", members);
-
-    for (_, obj) in members.entries() {
+    for obj in members.members() {
         res.push(handle_rulebody(obj));
     }
 
