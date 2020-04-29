@@ -28,6 +28,7 @@ fn main() {
 
     let file_content = read_json(&filename);
 
+    // load grammar in json format
     let grammar_json = match json::parse(&file_content) {
         Ok(g) => g,
         Err(_) => panic!("Impossible to parse json")
