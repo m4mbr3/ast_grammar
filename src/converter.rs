@@ -1,5 +1,10 @@
 use crate::grammar::{self, RuleBody};
 
+enum Pos {
+    Value(usize),
+    None,
+}
+
 struct Name (String);
 
 impl Name {
@@ -9,7 +14,7 @@ impl Name {
 }
 
 enum Node {
-    Intermediate(u32, Option<Box<Node>>),
+    Intermediate(u32),
     IntermediateChoice(u32, Option<Box<Vec<Node>>>),
     IntermediateSeq(Option<Box<Vec<Node>>>),
     Leaf(Name),
@@ -39,12 +44,13 @@ impl Ast {
     }
 }
 
-fn expand_rulebody (rule : &RuleBody, id_int: &mut u32, id_choice: &mut u32) -> Node {
+fn expand_rulebody (rule : &RuleBody, new_statements : &mut Vec<Statement>, id_int: &mut u32, id_choice: &mut u32) -> Node {
     match rule {
         RuleBody::Repeat(r) => if let Some(inner) = r {
-            let node = expand_rulebody(inner, id_int, id_choice);
+            let node = expand_rulebody(inner, new_statements, id_int, id_choice);
             *id_int = *id_int + 1;
-            return Node::Intermediate(*id_int, Some(Box::new(node)))
+            new_statements.push(Statement(Name(format!("Intermediate{}", id_int)), node));
+            return Node::Intermediate(*id_int)
         },
 
         RuleBody::Choice(c) => if let Some(inner) = c {
@@ -53,7 +59,7 @@ fn expand_rulebody (rule : &RuleBody, id_int: &mut u32, id_choice: &mut u32) -> 
             let curr_id = *id_choice;
             for el in inner.iter() {
                 *id_choice = *id_choice + 1;
-                choice_node.push(expand_rulebody(&el, id_int, id_choice));
+                choice_node.push(expand_rulebody(&el, new_statements, id_int, id_choice));
             }
 
             return Node::IntermediateChoice(curr_id, Some(Box::new(choice_node)))
@@ -64,7 +70,7 @@ fn expand_rulebody (rule : &RuleBody, id_int: &mut u32, id_choice: &mut u32) -> 
             let mut seq_node : Vec<Node> = vec!();
 
             for el in inner.iter() {
-                seq_node.push(expand_rulebody(&el, id_int, id_choice));
+                seq_node.push(expand_rulebody(&el, new_statements, id_int, id_choice));
             }
 
             return Node::IntermediateSeq(Some(Box::new(seq_node)))
@@ -80,19 +86,68 @@ fn expand_rulebody (rule : &RuleBody, id_int: &mut u32, id_choice: &mut u32) -> 
     panic!("Error, It should never arrive here")
 }
 
+fn is_intermediate_used(name : &String, n : &Node) -> bool{
+    match n {
+        Node::Intermediate(c) => {
+            if *name == format!("Intermediate{}", c) {
+                true
+            }
+            else {
+                false
+            }
+        }
+        Node::IntermediateChoice(_, c) |
+            Node::IntermediateSeq(c) => {
+                let nodes = match c {
+                    Some(c) => c,
+                    None => panic!("Empty intermediate node found")
+                };
+                for node in nodes.iter() {
+                    if is_intermediate_used(name, node) {
+                        return true;
+                    }
+                }
+                false
+        }
+        _ => false
+    }
+}
+
+fn get_pos_statement(name : String, st : &Vec<Statement>) -> Pos {
+    for (pos, el) in st.iter().enumerate() {
+        if is_intermediate_used(&name , el.get_node()) {
+                return Pos::Value(pos+1);
+        }
+    }
+    Pos::None
+}
+
 pub fn convert_to_ast (grammar : grammar::Grammar) -> Ast {
     let id = grammar.get_ident();
 
     let rules = grammar.get_rules();
 
     let mut ast : Vec<Statement> = vec!();
+    let mut new_statements : Vec<Statement> = vec!();
 
     let mut id_int = 0;
     let mut id_cho = 0;
 
     for rule in rules.get_list() {
-        let node = expand_rulebody(rule.get_rulebody(), &mut id_int, &mut id_cho);
+        let node = expand_rulebody(rule.get_rulebody(), &mut new_statements, &mut id_int, &mut id_cho);
         ast.push(Statement(Name(rule.get_ident().get_string().to_string()), node));
+    }
+
+    // Place new intermediate statements in the right place in the list
+    while !new_statements.is_empty() {
+        let el = new_statements.pop().unwrap();
+        println!("Name {}", el.get_name());
+        match get_pos_statement(el.get_name(), &ast) {
+            Pos::Value(x) =>
+                ast.insert(x as usize, el),
+
+            Pos::None => ()
+        }
     }
 
     Ast(Name(id.get_string().to_string()), ast)
@@ -102,13 +157,8 @@ fn node_to_string(node : &Node) -> String {
     let mut output : String = String::new();
 
     match node {
-        Node::Intermediate(i, c) => {
-            output = format!("{}list(intermediate{})\nand intermediate{} = ",output, i, i);
-            let cont = match c {
-                Some(c) => c,
-                None => panic!("Empty intermediate node found")
-            };
-            format!("{}{}", output, node_to_string(cont))
+        Node::Intermediate(i) => {
+            format!("{}list(Intermediate{}) ",output, i)
         },
 
         Node::IntermediateChoice(i, c) => {
