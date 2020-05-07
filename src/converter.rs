@@ -141,7 +141,6 @@ pub fn convert_to_ast (grammar : grammar::Grammar) -> Ast {
     // Place new intermediate statements in the right place in the list
     while !new_statements.is_empty() {
         let el = new_statements.pop().unwrap();
-        println!("Name {}", el.get_name());
         match get_pos_statement(el.get_name(), &ast) {
             Pos::Value(x) =>
                 ast.insert(x as usize, el),
